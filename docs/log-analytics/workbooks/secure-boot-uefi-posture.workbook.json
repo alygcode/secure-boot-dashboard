@@ -1,0 +1,96 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# Secure Boot / UEFI Certificate Posture\n\nIntune-first monitoring workbook for 2023 UEFI certificate readiness."
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "timeRange",
+            "name": "timeRange",
+            "label": "Time Range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 2592000000
+            }
+          },
+          {
+            "id": "department",
+            "name": "department",
+            "label": "Department",
+            "type": 2,
+            "isRequired": false,
+            "query": "IntuneSecureBootInventory_CL | where TimeGenerated >= ago(30d) | summarize by Department_s | order by Department_s asc",
+            "value": "*"
+          }
+        ],
+        "style": "above",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      }
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Fleet Posture"
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let osBuildBaseline = '22631';\nIntuneSecureBootInventory_CL\n| where TimeGenerated >= ago(30d)\n| extend DeviceId=tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s))\n| where isnotempty(DeviceId)\n| summarize arg_max(TimeGenerated, *) by DeviceId\n| extend BootMode=tostring(coalesce(BootMode_s, FirmwareType_s)), TPMVersion=tostring(coalesce(TPMVersion_s, TpmVersion_s)), UEFICertificateVersion=tostring(coalesce(UEFICertificateVersion_s, SecureBootCertVersion_s, CertVersion_s)), SecureBootEnabled=tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)), IsExempt=tobool(coalesce(IsExempt_b, Exempt_b, IsException_b)), OSBuild=tostring(coalesce(OSBuild_s, Build_s))\n| extend BootMode=case(BootMode =~ 'UEFI','UEFI',BootMode =~ 'Legacy','Legacy','Unknown'), TPMVersion=case(TPMVersion has '2.0','2.0',TPMVersion has '1.2','1.2',TPMVersion =~ 'None','None','Unknown'), UEFICertificateVersion=case(UEFICertificateVersion contains '2023','2023',UEFICertificateVersion contains '2011','2011',isempty(UEFICertificateVersion),'Unknown',UEFICertificateVersion)\n| extend CertStatus=case(UEFICertificateVersion=='2023','Updated',UEFICertificateVersion=='2011','NotUpdated','Unknown'), BlockReason=case(CertStatus!='NotUpdated','None',BootMode!='UEFI','LegacyMode',SecureBootEnabled!=true,'SecureBootDisabled',TPMVersion!='2.0','TPMBelow2',OSBuild < osBuildBaseline,'OSMissingUpdate','None'), PostureState=case(IsExempt==true,'Exempt',CertStatus=='Unknown' or BootMode=='Unknown' or TPMVersion=='Unknown','Unknown',CertStatus=='Updated','Updated',CertStatus=='NotUpdated' and BlockReason!='None','Blocked',CertStatus=='NotUpdated','NotUpdated','Unknown')\n| summarize Devices=count() by PostureState\n| order by Devices desc",
+        "size": 0,
+        "title": "Posture State Distribution",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "piechart"
+      }
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Root Cause Breakdown"
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let osBuildBaseline = '22631';\nIntuneSecureBootInventory_CL\n| where TimeGenerated >= ago(30d)\n| extend DeviceId=tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s))\n| where isnotempty(DeviceId)\n| summarize arg_max(TimeGenerated, *) by DeviceId\n| extend BootMode=tostring(coalesce(BootMode_s, FirmwareType_s)), TPMVersion=tostring(coalesce(TPMVersion_s, TpmVersion_s)), UEFICertificateVersion=tostring(coalesce(UEFICertificateVersion_s, SecureBootCertVersion_s, CertVersion_s)), SecureBootEnabled=tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)), IsExempt=tobool(coalesce(IsExempt_b, Exempt_b, IsException_b)), OSBuild=tostring(coalesce(OSBuild_s, Build_s))\n| extend BootMode=case(BootMode =~ 'UEFI','UEFI',BootMode =~ 'Legacy','Legacy','Unknown'), TPMVersion=case(TPMVersion has '2.0','2.0',TPMVersion has '1.2','1.2',TPMVersion =~ 'None','None','Unknown'), UEFICertificateVersion=case(UEFICertificateVersion contains '2023','2023',UEFICertificateVersion contains '2011','2011',isempty(UEFICertificateVersion),'Unknown',UEFICertificateVersion)\n| extend CertStatus=case(UEFICertificateVersion=='2023','Updated',UEFICertificateVersion=='2011','NotUpdated','Unknown'), BlockReason=case(CertStatus!='NotUpdated','None',BootMode!='UEFI','LegacyMode',SecureBootEnabled!=true,'SecureBootDisabled',TPMVersion!='2.0','TPMBelow2',OSBuild < osBuildBaseline,'OSMissingUpdate','None'), PostureState=case(IsExempt==true,'Exempt',CertStatus=='Unknown' or BootMode=='Unknown' or TPMVersion=='Unknown','Unknown',CertStatus=='Updated','Updated',CertStatus=='NotUpdated' and BlockReason!='None','Blocked',CertStatus=='NotUpdated','NotUpdated','Unknown')\n| where PostureState in ('Blocked','NotUpdated','Unknown')\n| summarize Devices=count() by BlockReason\n| order by Devices desc",
+        "size": 0,
+        "title": "Root Causes",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "barchart"
+      }
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Device Queue"
+      }
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let osBuildBaseline = '22631';\nIntuneSecureBootInventory_CL\n| where TimeGenerated >= ago(30d)\n| extend DeviceId=tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s))\n| where isnotempty(DeviceId)\n| summarize arg_max(TimeGenerated, *) by DeviceId\n| extend DeviceName=tostring(coalesce(DeviceName_s, DeviceHostname_s, DeviceDisplayName_s)), PrimaryUser=tostring(coalesce(PrimaryUser_s, UserPrincipalName_s, AssignedUser_s)), Department=tostring(coalesce(Department_s, OrgUnit_s)), Model=tostring(coalesce(Model_s, HardwareModel_s)), BIOSVersion=tostring(coalesce(BIOSVersion_s, FirmwareVersion_s)), OSBuild=tostring(coalesce(OSBuild_s, Build_s)), BootMode=tostring(coalesce(BootMode_s, FirmwareType_s)), TPMVersion=tostring(coalesce(TPMVersion_s, TpmVersion_s)), UEFICertificateVersion=tostring(coalesce(UEFICertificateVersion_s, SecureBootCertVersion_s, CertVersion_s)), SecureBootEnabled=tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)), IsExempt=tobool(coalesce(IsExempt_b, Exempt_b, IsException_b)), LastSeen=todatetime(coalesce(LastSeen_t, LastSeen_s, LastCheckIn_t, LastSync_t))\n| extend BootMode=case(BootMode =~ 'UEFI','UEFI',BootMode =~ 'Legacy','Legacy','Unknown'), TPMVersion=case(TPMVersion has '2.0','2.0',TPMVersion has '1.2','1.2',TPMVersion =~ 'None','None','Unknown'), UEFICertificateVersion=case(UEFICertificateVersion contains '2023','2023',UEFICertificateVersion contains '2011','2011',isempty(UEFICertificateVersion),'Unknown',UEFICertificateVersion)\n| extend CertStatus=case(UEFICertificateVersion=='2023','Updated',UEFICertificateVersion=='2011','NotUpdated','Unknown'), BlockReason=case(CertStatus!='NotUpdated','None',BootMode!='UEFI','LegacyMode',SecureBootEnabled!=true,'SecureBootDisabled',TPMVersion!='2.0','TPMBelow2',OSBuild < osBuildBaseline,'OSMissingUpdate','None'), PostureState=case(IsExempt==true,'Exempt',CertStatus=='Unknown' or BootMode=='Unknown' or TPMVersion=='Unknown','Unknown',CertStatus=='Updated','Updated',CertStatus=='NotUpdated' and BlockReason!='None','Blocked',CertStatus=='NotUpdated','NotUpdated','Unknown')\n| where PostureState in ('Blocked','NotUpdated','Unknown')\n| project DeviceName, DeviceId, PrimaryUser, Department, Model, BIOSVersion, BootMode, SecureBootEnabled, TPMVersion, UEFICertificateVersion, PostureState, BlockReason, OSBuild, LastSeen\n| order by PostureState asc, BlockReason asc, DeviceName asc",
+        "size": 1,
+        "title": "Non-Ready Devices",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      }
+    }
+  ],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

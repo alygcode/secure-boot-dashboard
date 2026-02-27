@@ -1,0 +1,64 @@
+// 04_cohorts_model_bios_tpm.kql
+// Cohort-level prioritization by model / BIOS / TPM / cert posture.
+
+let classified = materialize(
+    IntuneSecureBootInventory_CL
+    | where TimeGenerated >= ago(30d)
+    | extend _DeviceId = tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s))
+    | where isnotempty(_DeviceId)
+    | summarize arg_max(TimeGenerated, *) by _DeviceId
+    | extend
+        DeviceId = _DeviceId,
+        Model = tostring(coalesce(Model_s, HardwareModel_s)),
+        BIOSVersion = tostring(coalesce(BIOSVersion_s, FirmwareVersion_s)),
+        BootMode = tostring(coalesce(BootMode_s, FirmwareType_s)),
+        SecureBootEnabled = tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)),
+        TPMVersion = tostring(coalesce(TPMVersion_s, TpmVersion_s)),
+        UEFICertificateVersion = tostring(coalesce(UEFICertificateVersion_s, SecureBootCertVersion_s, CertVersion_s)),
+        WarrantyEndDate = todatetime(coalesce(WarrantyEndDate_t, WarrantyExpiry_t, WarrantyEndDate_s)),
+        IsExempt = tobool(coalesce(IsExempt_b, Exempt_b, IsException_b))
+    | extend
+        BootMode = case(BootMode =~ "UEFI", "UEFI", BootMode =~ "Legacy", "Legacy", "Unknown"),
+        TPMVersion = case(TPMVersion has "2.0", "2.0", TPMVersion has "1.2", "1.2", TPMVersion =~ "None", "None", "Unknown"),
+        UEFICertificateVersion = case(
+            UEFICertificateVersion contains "2023", "2023",
+            UEFICertificateVersion contains "2011", "2011",
+            isempty(UEFICertificateVersion), "Unknown",
+            UEFICertificateVersion
+        )
+    | extend
+        CertStatus = case(
+            UEFICertificateVersion == "2023", "Updated",
+            UEFICertificateVersion == "2011", "NotUpdated",
+            "Unknown"
+        ),
+        BlockReason = case(
+            CertStatus != "NotUpdated", "None",
+            BootMode != "UEFI", "LegacyMode",
+            SecureBootEnabled != true, "SecureBootDisabled",
+            TPMVersion != "2.0", "TPMBelow2",
+            "None"
+        ),
+        PostureState = case(
+            IsExempt == true, "Exempt",
+            CertStatus == "Unknown" or BootMode == "Unknown" or TPMVersion == "Unknown", "Unknown",
+            CertStatus == "Updated", "Updated",
+            CertStatus == "NotUpdated" and BlockReason != "None", "Blocked",
+            CertStatus == "NotUpdated", "NotUpdated",
+            "Unknown"
+        ),
+        WarrantyBand = case(isnull(WarrantyEndDate), "Unknown", WarrantyEndDate < now(), "Expired", WarrantyEndDate < now()+180d, "Expires<180d", "Active")
+);
+classified
+| summarize
+    Devices = dcount(DeviceId),
+    Updated = countif(PostureState == "Updated"),
+    NotUpdated = countif(PostureState == "NotUpdated"),
+    Blocked = countif(PostureState == "Blocked"),
+    Unknown = countif(PostureState == "Unknown"),
+    Exempt = countif(PostureState == "Exempt")
+    by Model, BIOSVersion, TPMVersion, SecureBootEnabled, CertStatus, WarrantyBand
+| extend
+    RiskScore = (Blocked * 5) + (NotUpdated * 3) + (Unknown * 2),
+    Priority = case(RiskScore >= 50, "P1", RiskScore >= 20, "P2", RiskScore >= 8, "P3", "P4")
+| order by RiskScore desc, Devices desc

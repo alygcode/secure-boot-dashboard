@@ -1,0 +1,87 @@
+// 06_alert_deadline_risk.kql
+// Use as a scheduled query alert. Returns one row when risk threshold is breached.
+
+let staleCutoff = 7d;
+let notUpdatedPctThreshold = 0.10;   // 10%
+let blockedPctThreshold = 0.03;      // 3%
+let hardDeadline = datetime(2026-06-30);
+let classified = materialize(
+    IntuneSecureBootInventory_CL
+    | where TimeGenerated >= ago(30d)
+    | extend
+        DeviceId = tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s)),
+        LastSeen = todatetime(coalesce(LastSeen_t, LastSeen_s, LastCheckIn_t, LastSync_t)),
+        BootMode = tostring(coalesce(BootMode_s, FirmwareType_s)),
+        SecureBootEnabled = tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)),
+        TPMVersion = tostring(coalesce(TPMVersion_s, TpmVersion_s)),
+        UEFICertificateVersion = tostring(coalesce(UEFICertificateVersion_s, SecureBootCertVersion_s, CertVersion_s)),
+        IsExempt = tobool(coalesce(IsExempt_b, Exempt_b, IsException_b))
+    | where isnotempty(DeviceId)
+    | summarize arg_max(TimeGenerated, *) by DeviceId
+    | extend
+        BootMode = case(BootMode =~ "UEFI", "UEFI", BootMode =~ "Legacy", "Legacy", "Unknown"),
+        TPMVersion = case(TPMVersion has "2.0", "2.0", TPMVersion has "1.2", "1.2", TPMVersion =~ "None", "None", "Unknown"),
+        UEFICertificateVersion = case(
+            UEFICertificateVersion contains "2023", "2023",
+            UEFICertificateVersion contains "2011", "2011",
+            isempty(UEFICertificateVersion), "Unknown",
+            UEFICertificateVersion
+        )
+    | extend
+        CertStatus = case(
+            UEFICertificateVersion == "2023", "Updated",
+            UEFICertificateVersion == "2011", "NotUpdated",
+            "Unknown"
+        ),
+        BlockReason = case(
+            CertStatus != "NotUpdated", "None",
+            BootMode != "UEFI", "LegacyMode",
+            SecureBootEnabled != true, "SecureBootDisabled",
+            TPMVersion != "2.0", "TPMBelow2",
+            "None"
+        ),
+        PostureState = case(
+            IsExempt == true, "Exempt",
+            CertStatus == "Unknown" or BootMode == "Unknown" or TPMVersion == "Unknown", "Unknown",
+            CertStatus == "Updated", "Updated",
+            CertStatus == "NotUpdated" and BlockReason != "None", "Blocked",
+            CertStatus == "NotUpdated", "NotUpdated",
+            "Unknown"
+        ),
+        IsStale = iff(isnull(LastSeen), true, LastSeen < ago(staleCutoff))
+);
+classified
+| summarize
+    Fleet = count(),
+    Updated = countif(PostureState == "Updated"),
+    NotUpdated = countif(PostureState == "NotUpdated"),
+    Blocked = countif(PostureState == "Blocked"),
+    Unknown = countif(PostureState == "Unknown"),
+    Exempt = countif(PostureState == "Exempt"),
+    Stale = countif(IsStale)
+| extend
+    ActionableFleet = Fleet - Exempt,
+    NotUpdatedPct = iff(ActionableFleet <= 0, 0.0, todouble(NotUpdated + Blocked) / todouble(ActionableFleet)),
+    BlockedPct = iff(ActionableFleet <= 0, 0.0, todouble(Blocked) / todouble(ActionableFleet)),
+    DaysToDeadline = datetime_diff("day", hardDeadline, now()),
+    BreachReason = case(
+        NotUpdatedPct > notUpdatedPctThreshold, "NotUpdatedAboveThreshold",
+        BlockedPct > blockedPctThreshold, "BlockedAboveThreshold",
+        Stale > 0, "StaleTelemetry",
+        "None"
+    )
+| where BreachReason != "None"
+| project
+    TimeGenerated = now(),
+    Fleet,
+    ActionableFleet,
+    Updated,
+    NotUpdated,
+    Blocked,
+    Unknown,
+    Exempt,
+    Stale,
+    NotUpdatedPct,
+    BlockedPct,
+    DaysToDeadline,
+    BreachReason

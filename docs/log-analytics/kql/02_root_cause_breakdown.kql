@@ -1,0 +1,63 @@
+// 02_root_cause_breakdown.kql
+// Aggregated root-cause summary for non-ready devices.
+
+let classified = materialize(
+    IntuneSecureBootInventory_CL
+    | where TimeGenerated >= ago(30d)
+    | extend _DeviceId = tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s))
+    | where isnotempty(_DeviceId)
+    | summarize arg_max(TimeGenerated, *) by _DeviceId
+    | extend
+        DeviceId = _DeviceId,
+        DeviceName = tostring(coalesce(DeviceName_s, DeviceHostname_s, DeviceDisplayName_s)),
+        Model = tostring(coalesce(Model_s, HardwareModel_s)),
+        BIOSVersion = tostring(coalesce(BIOSVersion_s, FirmwareVersion_s)),
+        RequiredBIOSVersion = tostring(coalesce(RequiredBIOSVersion_s, BIOSBaseline_s)),
+        OSBuild = tostring(coalesce(OSBuild_s, Build_s)),
+        SecureBootEnabled = tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)),
+        BootMode = tostring(coalesce(BootMode_s, FirmwareType_s)),
+        TPMVersion = tostring(coalesce(TPMVersion_s, TpmVersion_s)),
+        UEFICertificateVersion = tostring(coalesce(UEFICertificateVersion_s, SecureBootCertVersion_s, CertVersion_s)),
+        IsExempt = tobool(coalesce(IsExempt_b, Exempt_b, IsException_b))
+    | extend
+        BootMode = case(BootMode =~ "UEFI", "UEFI", BootMode =~ "Legacy", "Legacy", "Unknown"),
+        TPMVersion = case(TPMVersion has "2.0", "2.0", TPMVersion has "1.2", "1.2", TPMVersion =~ "None", "None", "Unknown"),
+        UEFICertificateVersion = case(
+            UEFICertificateVersion contains "2023", "2023",
+            UEFICertificateVersion contains "2011", "2011",
+            isempty(UEFICertificateVersion), "Unknown",
+            UEFICertificateVersion
+        )
+    | extend
+        CertStatus = case(
+            UEFICertificateVersion == "2023", "Updated",
+            UEFICertificateVersion == "2011", "NotUpdated",
+            "Unknown"
+        ),
+        BlockReason = case(
+            CertStatus != "NotUpdated", "None",
+            BootMode != "UEFI", "LegacyMode",
+            SecureBootEnabled != true, "SecureBootDisabled",
+            TPMVersion != "2.0", "TPMBelow2",
+            isnotempty(BIOSVersion) and isnotempty(RequiredBIOSVersion) and BIOSVersion < RequiredBIOSVersion, "FirmwareBelowBaseline",
+            "None"
+        ),
+        PostureState = case(
+            IsExempt == true, "Exempt",
+            CertStatus == "Unknown" or BootMode == "Unknown" or TPMVersion == "Unknown", "Unknown",
+            CertStatus == "Updated", "Updated",
+            CertStatus == "NotUpdated" and BlockReason != "None", "Blocked",
+            CertStatus == "NotUpdated", "NotUpdated",
+            "Unknown"
+        )
+);
+classified
+| where PostureState in ("Blocked", "NotUpdated", "Unknown")
+| summarize
+    Devices = count(),
+    LegacyMode = countif(BlockReason == "LegacyMode"),
+    SecureBootDisabled = countif(BlockReason == "SecureBootDisabled"),
+    TPMBelow2 = countif(BlockReason == "TPMBelow2"),
+    FirmwareBelowBaseline = countif(BlockReason == "FirmwareBelowBaseline")
+    by PostureState, BlockReason
+| order by Devices desc

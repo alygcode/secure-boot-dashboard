@@ -1,0 +1,59 @@
+// 00_normalized_device_posture.kql
+// Returns one latest normalized posture row per device.
+
+let lookback = 30d;
+IntuneSecureBootInventory_CL
+| where TimeGenerated >= ago(lookback)
+| extend _DeviceId = tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s))
+| where isnotempty(_DeviceId)
+| summarize arg_max(TimeGenerated, *) by _DeviceId
+| extend
+    DeviceId = _DeviceId,
+    DeviceName = tostring(coalesce(DeviceName_s, DeviceHostname_s, DeviceDisplayName_s)),
+    PrimaryUser = tostring(coalesce(PrimaryUser_s, UserPrincipalName_s, AssignedUser_s)),
+    Department = tostring(coalesce(Department_s, OrgUnit_s)),
+    Model = tostring(coalesce(Model_s, HardwareModel_s)),
+    Manufacturer = tostring(coalesce(Manufacturer_s, Vendor_s)),
+    BIOSVersion = tostring(coalesce(BIOSVersion_s, FirmwareVersion_s)),
+    RequiredBIOSVersion = tostring(coalesce(RequiredBIOSVersion_s, BIOSBaseline_s)),
+    WarrantyEndDate = todatetime(coalesce(WarrantyEndDate_t, WarrantyExpiry_t, WarrantyEndDate_s)),
+    OSVersion = tostring(coalesce(OSVersion_s, OSName_s)),
+    OSBuild = tostring(coalesce(OSBuild_s, Build_s)),
+    SecureBootEnabled = tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)),
+    BootMode = tostring(coalesce(BootMode_s, FirmwareType_s)),
+    TPMVersion = tostring(coalesce(TPMVersion_s, TpmVersion_s)),
+    UEFICertificateVersion = tostring(coalesce(UEFICertificateVersion_s, SecureBootCertVersion_s, CertVersion_s)),
+    IsExempt = tobool(coalesce(IsExempt_b, Exempt_b, IsException_b)),
+    ExemptionReason = tostring(coalesce(ExemptionReason_s, ExceptionReason_s)),
+    LastSeen = todatetime(coalesce(LastSeen_t, LastSeen_s, LastCheckIn_t, LastSync_t)),
+    DataSource = "Intune"
+| extend
+    BootMode = case(BootMode =~ "UEFI", "UEFI", BootMode =~ "Legacy", "Legacy", "Unknown"),
+    TPMVersion = case(TPMVersion has "2.0", "2.0", TPMVersion has "1.2", "1.2", TPMVersion =~ "None", "None", "Unknown"),
+    UEFICertificateVersion = case(
+        UEFICertificateVersion contains "2023", "2023",
+        UEFICertificateVersion contains "2011", "2011",
+        isempty(UEFICertificateVersion), "Unknown",
+        UEFICertificateVersion
+    )
+| project
+    TimeGenerated,
+    DeviceId,
+    DeviceName,
+    PrimaryUser,
+    Department,
+    Model,
+    Manufacturer,
+    BIOSVersion,
+    RequiredBIOSVersion,
+    WarrantyEndDate,
+    OSVersion,
+    OSBuild,
+    SecureBootEnabled,
+    BootMode,
+    TPMVersion,
+    UEFICertificateVersion,
+    IsExempt,
+    ExemptionReason,
+    LastSeen,
+    DataSource

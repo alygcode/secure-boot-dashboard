@@ -1,0 +1,53 @@
+// 05_trend_posture_over_time.kql
+// Time-series posture tracking.
+
+let window = 90d;
+IntuneSecureBootInventory_CL
+| where TimeGenerated >= ago(window)
+| extend
+    DeviceId = tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s)),
+    BootMode = tostring(coalesce(BootMode_s, FirmwareType_s)),
+    SecureBootEnabled = tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)),
+    TPMVersion = tostring(coalesce(TPMVersion_s, TpmVersion_s)),
+    UEFICertificateVersion = tostring(coalesce(UEFICertificateVersion_s, SecureBootCertVersion_s, CertVersion_s)),
+    IsExempt = tobool(coalesce(IsExempt_b, Exempt_b, IsException_b))
+| where isnotempty(DeviceId)
+| extend
+    BootMode = case(BootMode =~ "UEFI", "UEFI", BootMode =~ "Legacy", "Legacy", "Unknown"),
+    TPMVersion = case(TPMVersion has "2.0", "2.0", TPMVersion has "1.2", "1.2", TPMVersion =~ "None", "None", "Unknown"),
+    UEFICertificateVersion = case(
+        UEFICertificateVersion contains "2023", "2023",
+        UEFICertificateVersion contains "2011", "2011",
+        isempty(UEFICertificateVersion), "Unknown",
+        UEFICertificateVersion
+    )
+| summarize arg_max(TimeGenerated, *) by Day=bin(TimeGenerated, 1d), DeviceId
+| extend
+    CertStatus = case(
+        UEFICertificateVersion == "2023", "Updated",
+        UEFICertificateVersion == "2011", "NotUpdated",
+        "Unknown"
+    ),
+    BlockReason = case(
+        CertStatus != "NotUpdated", "None",
+        BootMode != "UEFI", "LegacyMode",
+        SecureBootEnabled != true, "SecureBootDisabled",
+        TPMVersion != "2.0", "TPMBelow2",
+        "None"
+    ),
+    PostureState = case(
+        IsExempt == true, "Exempt",
+        CertStatus == "Unknown" or BootMode == "Unknown" or TPMVersion == "Unknown", "Unknown",
+        CertStatus == "Updated", "Updated",
+        CertStatus == "NotUpdated" and BlockReason != "None", "Blocked",
+        CertStatus == "NotUpdated", "NotUpdated",
+        "Unknown"
+    )
+| summarize
+    Updated = countif(PostureState == "Updated"),
+    NotUpdated = countif(PostureState == "NotUpdated"),
+    Blocked = countif(PostureState == "Blocked"),
+    Unknown = countif(PostureState == "Unknown"),
+    Exempt = countif(PostureState == "Exempt")
+    by Day
+| order by Day asc

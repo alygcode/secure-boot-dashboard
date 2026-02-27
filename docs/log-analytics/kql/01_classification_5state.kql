@@ -1,0 +1,92 @@
+// 01_classification_5state.kql
+// Classifies each device into Updated / NotUpdated / Blocked / Unknown / Exempt.
+
+let osBuildBaseline = "22631";
+let posture = materialize(
+    IntuneSecureBootInventory_CL
+    | where TimeGenerated >= ago(30d)
+    | extend _DeviceId = tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s))
+    | where isnotempty(_DeviceId)
+    | summarize arg_max(TimeGenerated, *) by _DeviceId
+    | extend
+        DeviceId = _DeviceId,
+        DeviceName = tostring(coalesce(DeviceName_s, DeviceHostname_s, DeviceDisplayName_s)),
+        Model = tostring(coalesce(Model_s, HardwareModel_s)),
+        BIOSVersion = tostring(coalesce(BIOSVersion_s, FirmwareVersion_s)),
+        RequiredBIOSVersion = tostring(coalesce(RequiredBIOSVersion_s, BIOSBaseline_s)),
+        OSBuild = tostring(coalesce(OSBuild_s, Build_s)),
+        SecureBootEnabled = tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)),
+        BootMode = tostring(coalesce(BootMode_s, FirmwareType_s)),
+        TPMVersion = tostring(coalesce(TPMVersion_s, TpmVersion_s)),
+        UEFICertificateVersion = tostring(coalesce(UEFICertificateVersion_s, SecureBootCertVersion_s, CertVersion_s)),
+        IsExempt = tobool(coalesce(IsExempt_b, Exempt_b, IsException_b)),
+        ExemptionReason = tostring(coalesce(ExemptionReason_s, ExceptionReason_s)),
+        LastSeen = todatetime(coalesce(LastSeen_t, LastSeen_s, LastCheckIn_t, LastSync_t))
+    | extend
+        BootMode = case(BootMode =~ "UEFI", "UEFI", BootMode =~ "Legacy", "Legacy", "Unknown"),
+        TPMVersion = case(TPMVersion has "2.0", "2.0", TPMVersion has "1.2", "1.2", TPMVersion =~ "None", "None", "Unknown"),
+        UEFICertificateVersion = case(
+            UEFICertificateVersion contains "2023", "2023",
+            UEFICertificateVersion contains "2011", "2011",
+            isempty(UEFICertificateVersion), "Unknown",
+            UEFICertificateVersion
+        )
+    | extend
+        CertStatus = case(
+            UEFICertificateVersion == "2023", "Updated",
+            UEFICertificateVersion == "2011", "NotUpdated",
+            UEFICertificateVersion == "Unknown", "Unknown",
+            "Unknown"
+        ),
+        TPMOk = TPMVersion == "2.0",
+        UEFIOk = BootMode == "UEFI",
+        SecureBootOk = SecureBootEnabled == true,
+        BIOSKnown = isnotempty(BIOSVersion) and isnotempty(RequiredBIOSVersion),
+        BIOSMeetsBaseline = iff(BIOSKnown, BIOSVersion >= RequiredBIOSVersion, bool(null)),
+        OSBuildKnown = isnotempty(OSBuild),
+        OSBuildMeetsBaseline = iff(OSBuildKnown, OSBuild >= osBuildBaseline, bool(null))
+    | extend
+        UnknownData =
+            isempty(DeviceName)
+            or BootMode == "Unknown"
+            or TPMVersion == "Unknown"
+            or CertStatus == "Unknown"
+            or isempty(OSBuild),
+        BlockReason = case(
+            CertStatus != "NotUpdated", "None",
+            UEFIOk == false, "LegacyMode",
+            SecureBootOk == false, "SecureBootDisabled",
+            TPMOk == false, "TPMBelow2",
+            BIOSKnown and BIOSMeetsBaseline == false, "FirmwareBelowBaseline",
+            OSBuildKnown and OSBuildMeetsBaseline == false, "OSMissingUpdate",
+            "None"
+        ),
+        PostureState = case(
+            IsExempt == true, "Exempt",
+            UnknownData == true, "Unknown",
+            CertStatus == "Updated", "Updated",
+            CertStatus == "NotUpdated" and BlockReason != "None", "Blocked",
+            CertStatus == "NotUpdated", "NotUpdated",
+            "Unknown"
+        )
+);
+posture
+| project
+    TimeGenerated,
+    DeviceId,
+    DeviceName,
+    Model,
+    BIOSVersion,
+    RequiredBIOSVersion,
+    OSBuild,
+    SecureBootEnabled,
+    BootMode,
+    TPMVersion,
+    UEFICertificateVersion,
+    CertStatus,
+    PostureState,
+    BlockReason,
+    IsExempt,
+    ExemptionReason,
+    LastSeen
+| order by PostureState asc, DeviceName asc
