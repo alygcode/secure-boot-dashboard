@@ -1,0 +1,21 @@
+{
+  "DeviceId": "4C4C4544-0037-4C10-8057-C8C04F4D5833",
+  "DeviceName": "DESKTOP-QA7ML2J",
+  "PrimaryUser": "REDMOND\\v-alyghoneim",
+  "Department": "",
+  "Model": "Inspiron 16 Plus 7630",
+  "Manufacturer": "Dell Inc.",
+  "BIOSVersion": "1.25.0",
+  "RequiredBIOSVersion": "",
+  "WarrantyEndDate": "",
+  "OSVersion": "Microsoft Windows 11 Enterprise",
+  "OSBuild": "26200",
+  "SecureBootEnabled": false,
+  "BootMode": "UEFI",
+  "TPMVersion": "Unknown",
+  "UEFICertificateVersion": "Unknown",
+  "IsExempt": false,
+  "ExemptionReason": "",
+  "LastSeen": "2026-02-27T19:57:32.2927831Z",
+  "TimeGenerated": "2026-02-27T19:57:32.2981181Z"
+}

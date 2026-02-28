@@ -1,0 +1,62 @@
+// 07_preflight_readiness.kql
+// Quick environment readiness check for workbook deployment.
+
+let lookback = 7d;
+let requiredColumns = dynamic([
+  "DeviceId_g", "DeviceId_s", "AadDeviceId_g", "ManagedDeviceId_s",
+  "DeviceName_s", "DeviceHostname_s", "DeviceDisplayName_s",
+  "BootMode_s", "FirmwareType_s",
+  "SecureBootEnabled_b", "SecureBootState_b", "SecureBootEnabled_s",
+  "TPMVersion_s", "TpmVersion_s",
+  "UEFICertificateVersion_s", "SecureBootCertVersion_s", "CertVersion_s",
+  "OSBuild_s", "Build_s",
+  "TimeGenerated"
+]);
+
+let hasTable = toscalar(
+  union isfuzzy=true (IntuneSecureBootInventory_CL | take 1)
+  | summarize rows=count()
+);
+
+let sample = IntuneSecureBootInventory_CL
+| where TimeGenerated >= ago(lookback)
+| summarize
+    Records=count(),
+    DistinctDevices=dcount(tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s))),
+    LastRecord=max(TimeGenerated),
+    MissingDeviceId=countif(isempty(tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s)))),
+    MissingDeviceName=countif(isempty(tostring(coalesce(DeviceName_s, DeviceHostname_s, DeviceDisplayName_s)))),
+    MissingBootMode=countif(isempty(tostring(coalesce(BootMode_s, FirmwareType_s)))),
+    MissingSecureBoot=countif(isnull(tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)))),
+    MissingTPM=countif(isempty(tostring(coalesce(TPMVersion_s, TpmVersion_s)))),
+    MissingCertVersion=countif(isempty(tostring(coalesce(UEFICertificateVersion_s, SecureBootCertVersion_s, CertVersion_s)))),
+    MissingOSBuild=countif(isempty(tostring(coalesce(OSBuild_s, Build_s))));
+
+sample
+| extend
+    TableStatus = iff(hasTable > 0, "OK", "MISSING_TABLE"),
+    FreshnessStatus = iff(LastRecord >= ago(1d), "OK", "STALE_DATA"),
+    DeviceCoverageStatus = iff(DistinctDevices > 0, "OK", "NO_DEVICE_IDS"),
+    ReadyForWorkbook = iff(
+      TableStatus == "OK"
+      and FreshnessStatus == "OK"
+      and DeviceCoverageStatus == "OK",
+      "YES",
+      "NO"
+    )
+| project
+    ReadyForWorkbook,
+    TableStatus,
+    FreshnessStatus,
+    DeviceCoverageStatus,
+    Records,
+    DistinctDevices,
+    LastRecord,
+    MissingDeviceId,
+    MissingDeviceName,
+    MissingBootMode,
+    MissingSecureBoot,
+    MissingTPM,
+    MissingCertVersion,
+    MissingOSBuild,
+    RequiredColumnsHint = requiredColumns

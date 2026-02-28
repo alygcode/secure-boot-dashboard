@@ -1,0 +1,44 @@
+// DCR transform for IntuneSecureBootInventory_CL
+// Use in Data Collection Rule (transformKql) for stream Custom-IntuneSecureBootInventory.
+
+source
+| extend
+    DeviceId_g = toguid(DeviceId),
+    DeviceName_s = tostring(DeviceName),
+    PrimaryUser_s = tostring(PrimaryUser),
+    Department_s = tostring(Department),
+    Model_s = tostring(Model),
+    Manufacturer_s = tostring(Manufacturer),
+    BIOSVersion_s = tostring(BIOSVersion),
+    RequiredBIOSVersion_s = tostring(RequiredBIOSVersion),
+    WarrantyEndDate_t = todatetime(WarrantyEndDate),
+    OSVersion_s = tostring(OSVersion),
+    OSBuild_s = tostring(OSBuild),
+    SecureBootEnabled_b = tobool(SecureBootEnabled),
+    BootMode_s = tostring(BootMode),
+    TPMVersion_s = tostring(TPMVersion),
+    UEFICertificateVersion_s = tostring(UEFICertificateVersion),
+    IsExempt_b = tobool(IsExempt),
+    ExemptionReason_s = tostring(ExemptionReason),
+    LastSeen_t = todatetime(LastSeen),
+    TimeGenerated = todatetime(TimeGenerated)
+| project
+    DeviceId_g,
+    DeviceName_s,
+    PrimaryUser_s,
+    Department_s,
+    Model_s,
+    Manufacturer_s,
+    BIOSVersion_s,
+    RequiredBIOSVersion_s,
+    WarrantyEndDate_t,
+    OSVersion_s,
+    OSBuild_s,
+    SecureBootEnabled_b,
+    BootMode_s,
+    TPMVersion_s,
+    UEFICertificateVersion_s,
+    IsExempt_b,
+    ExemptionReason_s,
+    LastSeen_t,
+    TimeGenerated
