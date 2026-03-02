@@ -30,6 +30,11 @@ class TestKqlFileInventory:
         "05_trend_posture_over_time.kql",
         "06_alert_deadline_risk.kql",
         "07_preflight_readiness.kql",
+        "08_stale_device_list.kql",
+        "09_exempt_audit.kql",
+        "10_department_posture_summary.kql",
+        "11_regression_detection.kql",
+        "12_remediation_progress.kql",
     ]
 
     def test_all_expected_kql_files_exist(self, kql_dir):

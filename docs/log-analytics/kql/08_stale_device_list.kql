@@ -1,0 +1,54 @@
+// 08_stale_device_list.kql
+// Device-level drill-down for stale telemetry — backs the stale count in query 06.
+
+let staleCutoff = 7d;
+let lookback = 30d;
+IntuneSecureBootInventory_CL
+| where TimeGenerated >= ago(lookback)
+| extend _DeviceId = tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s))
+| where isnotempty(_DeviceId)
+| summarize arg_max(TimeGenerated, *) by _DeviceId
+| extend
+    DeviceId = _DeviceId,
+    DeviceName = tostring(coalesce(DeviceName_s, DeviceHostname_s, DeviceDisplayName_s)),
+    PrimaryUser = tostring(coalesce(PrimaryUser_s, UserPrincipalName_s, AssignedUser_s)),
+    Department = tostring(coalesce(Department_s, OrgUnit_s)),
+    Model = tostring(coalesce(Model_s, HardwareModel_s)),
+    LastSeen = todatetime(coalesce(LastSeen_t, LastSeen_s, LastCheckIn_t, LastSync_t)),
+    UEFICertificateVersion = tostring(coalesce(UEFICertificateVersion_s, SecureBootCertVersion_s, CertVersion_s)),
+    BootMode = tostring(coalesce(BootMode_s, FirmwareType_s)),
+    SecureBootEnabled = tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)),
+    TPMVersion = tostring(coalesce(TPMVersion_s, TpmVersion_s)),
+    IsExempt = tobool(coalesce(IsExempt_b, Exempt_b, IsException_b))
+| extend
+    IsStale = iff(isnull(LastSeen), true, LastSeen < ago(staleCutoff)),
+    DaysSinceLastSeen = iff(isnull(LastSeen), int(null), datetime_diff("day", now(), LastSeen))
+| where IsStale == true
+| extend
+    UEFICertificateVersion = case(
+        UEFICertificateVersion contains "2023", "2023",
+        UEFICertificateVersion contains "2011", "2011",
+        isempty(UEFICertificateVersion), "Unknown",
+        UEFICertificateVersion
+    ),
+    LastKnownCertStatus = case(
+        UEFICertificateVersion == "2023", "Updated",
+        UEFICertificateVersion == "2011", "NotUpdated",
+        "Unknown"
+    ),
+    BootMode = case(BootMode =~ "UEFI", "UEFI", BootMode =~ "Legacy", "Legacy", "Unknown"),
+    TPMVersion = case(TPMVersion has "2.0", "2.0", TPMVersion has "1.2", "1.2", TPMVersion =~ "None", "None", "Unknown")
+| project
+    DeviceName,
+    DeviceId,
+    PrimaryUser,
+    Department,
+    Model,
+    LastSeen,
+    DaysSinceLastSeen,
+    LastKnownCertStatus,
+    BootMode,
+    SecureBootEnabled,
+    TPMVersion,
+    IsExempt
+| order by DaysSinceLastSeen desc nulls first, DeviceName asc

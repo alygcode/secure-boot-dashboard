@@ -116,6 +116,9 @@ class TestClassificationConsistency:
             "04_cohorts_model_bios_tpm.kql",
             "05_trend_posture_over_time.kql",
             "06_alert_deadline_risk.kql",
+            "10_department_posture_summary.kql",
+            "11_regression_detection.kql",
+            "12_remediation_progress.kql",
         ]
         for name in classification_files:
             content = (kql_dir / name).read_text()
@@ -125,7 +128,7 @@ class TestClassificationConsistency:
                 )
 
     def test_block_reasons_consistent_across_queries(self, kql_dir):
-        """Queries 01-06 should all reference the same block reasons."""
+        """Queries that classify devices should all reference the same block reasons."""
         files = [
             "01_classification_5state.kql",
             "02_root_cause_breakdown.kql",
@@ -133,6 +136,9 @@ class TestClassificationConsistency:
             "04_cohorts_model_bios_tpm.kql",
             "05_trend_posture_over_time.kql",
             "06_alert_deadline_risk.kql",
+            "10_department_posture_summary.kql",
+            "11_regression_detection.kql",
+            "12_remediation_progress.kql",
         ]
         for name in files:
             content = (kql_dir / name).read_text()
@@ -229,6 +235,38 @@ class TestRiskScoring:
     def test_orders_by_risk_score_desc(self, kql_dir):
         content = (kql_dir / "04_cohorts_model_bios_tpm.kql").read_text()
         assert "RiskScore desc" in content
+
+
+# ---------------------------------------------------------------------------
+# OS build baseline consistency
+# ---------------------------------------------------------------------------
+class TestOsBuildBaselineConsistency:
+    """The osBuildBaseline literal must be the same value across all classification queries."""
+
+    BASELINE_VALUE = "22631"
+    FILES_WITH_INLINE_BASELINE = [
+        "02_root_cause_breakdown.kql",
+        "03_non_updated_device_detail.kql",
+        "04_cohorts_model_bios_tpm.kql",
+        "05_trend_posture_over_time.kql",
+        "06_alert_deadline_risk.kql",
+        "10_department_posture_summary.kql",
+        "11_regression_detection.kql",
+        "12_remediation_progress.kql",
+    ]
+
+    def test_inline_baseline_consistent(self, kql_dir):
+        """All classification queries must reference the same OS build baseline."""
+        for name in self.FILES_WITH_INLINE_BASELINE:
+            content = (kql_dir / name).read_text()
+            assert self.BASELINE_VALUE in content, (
+                f"{name} does not reference OS build baseline {self.BASELINE_VALUE}"
+            )
+
+    def test_query_01_baseline_variable_matches(self, kql_dir):
+        """Query 01 must define osBuildBaseline with the canonical value."""
+        content = (kql_dir / "01_classification_5state.kql").read_text()
+        assert f'osBuildBaseline = "{self.BASELINE_VALUE}"' in content
 
 
 # ---------------------------------------------------------------------------
