@@ -6,6 +6,10 @@ IntuneSecureBootInventory_CL
 | where TimeGenerated >= ago(window)
 | extend
     DeviceId = tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s)),
+    DeviceName = tostring(coalesce(DeviceName_s, DeviceHostname_s, DeviceDisplayName_s)),
+    BIOSVersion = tostring(coalesce(BIOSVersion_s, FirmwareVersion_s)),
+    RequiredBIOSVersion = tostring(coalesce(RequiredBIOSVersion_s, BIOSBaseline_s)),
+    OSBuild = tostring(coalesce(OSBuild_s, Build_s)),
     BootMode = tostring(coalesce(BootMode_s, FirmwareType_s)),
     SecureBootEnabled = tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)),
     TPMVersion = tostring(coalesce(TPMVersion_s, TpmVersion_s)),
@@ -33,11 +37,13 @@ IntuneSecureBootInventory_CL
         BootMode != "UEFI", "LegacyMode",
         SecureBootEnabled != true, "SecureBootDisabled",
         TPMVersion != "2.0", "TPMBelow2",
+        isnotempty(BIOSVersion) and isnotempty(RequiredBIOSVersion) and BIOSVersion < RequiredBIOSVersion, "FirmwareBelowBaseline",
+        isnotempty(OSBuild) and OSBuild < "22631", "OSMissingUpdate",
         "None"
     ),
     PostureState = case(
         IsExempt == true, "Exempt",
-        CertStatus == "Unknown" or BootMode == "Unknown" or TPMVersion == "Unknown", "Unknown",
+        isempty(DeviceName) or BootMode == "Unknown" or TPMVersion == "Unknown" or CertStatus == "Unknown" or isempty(OSBuild), "Unknown",
         CertStatus == "Updated", "Updated",
         CertStatus == "NotUpdated" and BlockReason != "None", "Blocked",
         CertStatus == "NotUpdated", "NotUpdated",
