@@ -1,0 +1,18 @@
+{
+  "agents": {
+    "agent-1772425960485-07nhzu": {
+      "agentId": "agent-1772425960485-07nhzu",
+      "agentType": "coder",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "provider": "anthropic"
+      },
+      "createdAt": "2026-03-02T04:32:40.485Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    }
+  },
+  "version": "3.0.0"
+}
