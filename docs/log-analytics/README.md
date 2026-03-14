@@ -164,10 +164,20 @@ Run these in order:
 - `kql/12_remediation_progress.kql` — devices that moved NotUpdated/Blocked → Updated in the last 14 days
 - `deployment/dcr-transform.kql`
 - `deployment/sample-payload.json`
+- `deployment/live-payload.json`
 - `deployment/send-intune-secureboot.ps1`
 - `deployment/collect-live-intune-secureboot.ps1`
 - `deployment/register-secureboot-collector-task.ps1`
 - `workbooks/secure-boot-uefi-posture.workbook.json`
+
+## Integration Tests
+
+The repository includes 153 pytest tests in `../../tests/` that validate classification logic, data contracts, cross-artifact consistency, and script structure — all running offline without Azure infrastructure.
+
+```bash
+pip install pytest jsonschema
+pytest
+```
 
 ---
 
