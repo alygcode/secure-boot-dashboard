@@ -1,6 +1,6 @@
 # Secure Boot UEFI Certificate Workbook
 
-This repository contains Log Analytics content for Secure Boot UEFI certificate readiness monitoring — KQL queries, deployment scripts, an Azure Workbook template, and an integration test suite.
+This repository contains Log Analytics content for Secure Boot UEFI certificate readiness monitoring — KQL queries, deployment scripts, and an Azure Workbook template.
 
 ## Scope
 
@@ -8,8 +8,6 @@ This repository contains Log Analytics content for Secure Boot UEFI certificate 
 - **Azure Workbook** template for fleet-level posture visualization and remediation tracking.
 - **Deployment scripts** — PowerShell for device telemetry collection, Log Analytics ingestion, and scheduled task registration.
 - **DCR transform** — Data Collection Rule KQL for mapping raw payloads to typed Log Analytics columns.
-- **Integration tests** — 153 pytest tests validating classification logic, data contracts, cross-artifact consistency, and script structure.
-
 ## Repository Layout
 
 ```
@@ -33,14 +31,6 @@ docs/log-analytics/
 ├── workbooks/
 │   └── secure-boot-uefi-posture.workbook.json
 └── README.md                     # Implementation guide
-tests/                            # Integration test suite
-├── conftest.py                   # Shared fixtures and schema
-├── test_payload_schema.py        # Payload data contract tests
-├── test_kql_queries.py           # KQL structure and consistency tests
-├── test_classification_logic.py  # 5-state classification logic tests
-├── test_dcr_and_workbook.py      # DCR transform and workbook tests
-├── test_powershell_scripts.py    # PowerShell script structure tests
-└── test_cross_artifact.py        # Cross-artifact consistency tests
 ```
 
 ## Classification Model
@@ -56,24 +46,6 @@ Devices are classified into one of 5 posture states:
 | **Exempt** | Manually exempted with a documented reason |
 
 Block reason priority: `LegacyMode > SecureBootDisabled > TPMBelow2 > FirmwareBelowBaseline > OSMissingUpdate`
-
-## Running Tests
-
-```bash
-pip install pytest jsonschema
-pytest
-```
-
-All 153 tests run offline — no Azure infrastructure required.
-
-Test markers for selective runs:
-
-```bash
-pytest -m payload          # Payload schema tests
-pytest -m classification   # Classification logic tests
-pytest -m kql              # KQL query structure tests
-pytest -m crossartifact    # Cross-artifact consistency tests
-```
 
 ## Getting Started
 

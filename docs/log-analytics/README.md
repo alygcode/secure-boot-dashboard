@@ -170,15 +170,6 @@ Run these in order:
 - `deployment/register-secureboot-collector-task.ps1`
 - `workbooks/secure-boot-uefi-posture.workbook.json`
 
-## Integration Tests
-
-The repository includes 153 pytest tests in `../../tests/` that validate classification logic, data contracts, cross-artifact consistency, and script structure — all running offline without Azure infrastructure.
-
-```bash
-pip install pytest jsonschema
-pytest
-```
-
 ---
 
 ## Data Contract (Required Fields)
