@@ -1,0 +1,123 @@
+// 12_remediation_progress.kql
+// Devices that moved from NotUpdated or Blocked to Updated within the tracking window.
+
+let progressWindow = 14d;
+let lookback = 30d;
+let current_updated = materialize(
+    IntuneSecureBootInventory_CL
+    | where TimeGenerated >= ago(progressWindow)
+    | extend _DeviceId = tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s))
+    | where isnotempty(_DeviceId)
+    | summarize arg_max(TimeGenerated, *) by _DeviceId
+    | extend
+        DeviceId = _DeviceId,
+        DeviceName = tostring(coalesce(DeviceName_s, DeviceHostname_s, DeviceDisplayName_s)),
+        PrimaryUser = tostring(coalesce(PrimaryUser_s, UserPrincipalName_s, AssignedUser_s)),
+        Department = tostring(coalesce(Department_s, OrgUnit_s)),
+        Model = tostring(coalesce(Model_s, HardwareModel_s)),
+        BIOSVersion = tostring(coalesce(BIOSVersion_s, FirmwareVersion_s)),
+        RequiredBIOSVersion = tostring(coalesce(RequiredBIOSVersion_s, BIOSBaseline_s)),
+        OSBuild = tostring(coalesce(OSBuild_s, Build_s)),
+        BootMode = tostring(coalesce(BootMode_s, FirmwareType_s)),
+        SecureBootEnabled = tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)),
+        TPMVersion = tostring(coalesce(TPMVersion_s, TpmVersion_s)),
+        UEFICertificateVersion = tostring(coalesce(UEFICertificateVersion_s, SecureBootCertVersion_s, CertVersion_s)),
+        IsExempt = tobool(coalesce(IsExempt_b, Exempt_b, IsException_b))
+    | extend
+        BootMode = case(BootMode =~ "UEFI", "UEFI", BootMode =~ "Legacy", "Legacy", "Unknown"),
+        TPMVersion = case(TPMVersion has "2.0", "2.0", TPMVersion has "1.2", "1.2", TPMVersion =~ "None", "None", "Unknown"),
+        UEFICertificateVersion = case(
+            UEFICertificateVersion contains "2023", "2023",
+            UEFICertificateVersion contains "2011", "2011",
+            isempty(UEFICertificateVersion), "Unknown",
+            UEFICertificateVersion
+        )
+    | extend
+        CertStatus = case(
+            UEFICertificateVersion == "2023", "Updated",
+            UEFICertificateVersion == "2011", "NotUpdated",
+            "Unknown"
+        ),
+        BlockReason = case(
+            CertStatus != "NotUpdated", "None",
+            BootMode != "UEFI", "LegacyMode",
+            SecureBootEnabled != true, "SecureBootDisabled",
+            TPMVersion != "2.0", "TPMBelow2",
+            isnotempty(BIOSVersion) and isnotempty(RequiredBIOSVersion) and BIOSVersion < RequiredBIOSVersion, "FirmwareBelowBaseline",
+            isnotempty(OSBuild) and OSBuild < "22631", "OSMissingUpdate",
+            "None"
+        ),
+        PostureState = case(
+            IsExempt == true, "Exempt",
+            isempty(DeviceName) or BootMode == "Unknown" or TPMVersion == "Unknown" or CertStatus == "Unknown" or isempty(OSBuild), "Unknown",
+            CertStatus == "Updated", "Updated",
+            CertStatus == "NotUpdated" and BlockReason != "None", "Blocked",
+            CertStatus == "NotUpdated", "NotUpdated",
+            "Unknown"
+        )
+    | where PostureState == "Updated"
+    | project DeviceId, DeviceName, PrimaryUser, Department, Model
+);
+let prior_non_compliant = materialize(
+    IntuneSecureBootInventory_CL
+    | where TimeGenerated >= ago(lookback) and TimeGenerated < ago(progressWindow)
+    | extend _DeviceId = tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s))
+    | where isnotempty(_DeviceId)
+    | summarize arg_max(TimeGenerated, *) by _DeviceId
+    | extend
+        DeviceId = _DeviceId,
+        DeviceName = tostring(coalesce(DeviceName_s, DeviceHostname_s, DeviceDisplayName_s)),
+        BIOSVersion = tostring(coalesce(BIOSVersion_s, FirmwareVersion_s)),
+        RequiredBIOSVersion = tostring(coalesce(RequiredBIOSVersion_s, BIOSBaseline_s)),
+        OSBuild = tostring(coalesce(OSBuild_s, Build_s)),
+        BootMode = tostring(coalesce(BootMode_s, FirmwareType_s)),
+        SecureBootEnabled = tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)),
+        TPMVersion = tostring(coalesce(TPMVersion_s, TpmVersion_s)),
+        UEFICertificateVersion = tostring(coalesce(UEFICertificateVersion_s, SecureBootCertVersion_s, CertVersion_s)),
+        IsExempt = tobool(coalesce(IsExempt_b, Exempt_b, IsException_b))
+    | extend
+        BootMode = case(BootMode =~ "UEFI", "UEFI", BootMode =~ "Legacy", "Legacy", "Unknown"),
+        TPMVersion = case(TPMVersion has "2.0", "2.0", TPMVersion has "1.2", "1.2", TPMVersion =~ "None", "None", "Unknown"),
+        UEFICertificateVersion = case(
+            UEFICertificateVersion contains "2023", "2023",
+            UEFICertificateVersion contains "2011", "2011",
+            isempty(UEFICertificateVersion), "Unknown",
+            UEFICertificateVersion
+        )
+    | extend
+        CertStatus = case(
+            UEFICertificateVersion == "2023", "Updated",
+            UEFICertificateVersion == "2011", "NotUpdated",
+            "Unknown"
+        ),
+        BlockReason = case(
+            CertStatus != "NotUpdated", "None",
+            BootMode != "UEFI", "LegacyMode",
+            SecureBootEnabled != true, "SecureBootDisabled",
+            TPMVersion != "2.0", "TPMBelow2",
+            isnotempty(BIOSVersion) and isnotempty(RequiredBIOSVersion) and BIOSVersion < RequiredBIOSVersion, "FirmwareBelowBaseline",
+            isnotempty(OSBuild) and OSBuild < "22631", "OSMissingUpdate",
+            "None"
+        ),
+        PostureState = case(
+            IsExempt == true, "Exempt",
+            isempty(DeviceName) or BootMode == "Unknown" or TPMVersion == "Unknown" or CertStatus == "Unknown" or isempty(OSBuild), "Unknown",
+            CertStatus == "Updated", "Updated",
+            CertStatus == "NotUpdated" and BlockReason != "None", "Blocked",
+            CertStatus == "NotUpdated", "NotUpdated",
+            "Unknown"
+        )
+    | where PostureState in ("NotUpdated", "Blocked")
+    | project DeviceId, PriorState = PostureState
+);
+current_updated
+| join kind=inner prior_non_compliant on DeviceId
+| project
+    DeviceName,
+    DeviceId,
+    PrimaryUser,
+    Department,
+    Model,
+    PriorState,
+    CurrentState = "Updated"
+| order by PriorState asc, DeviceName asc

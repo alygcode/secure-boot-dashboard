@@ -4,6 +4,7 @@
 source
 | extend
     DeviceId_g = toguid(DeviceId),
+    DeviceId_s = tostring(DeviceId),
     DeviceName_s = tostring(DeviceName),
     PrimaryUser_s = tostring(PrimaryUser),
     Department_s = tostring(Department),
@@ -24,6 +25,7 @@ source
     TimeGenerated = todatetime(TimeGenerated)
 | project
     DeviceId_g,
+    DeviceId_s,
     DeviceName_s,
     PrimaryUser_s,
     Department_s,

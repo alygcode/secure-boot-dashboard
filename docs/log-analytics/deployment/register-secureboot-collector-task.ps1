@@ -36,6 +36,10 @@ param(
   [string]$StreamName = "Custom-IntuneSecureBootInventory"
 )
 
+# WARNING: When -EnableLogAnalyticsSend is used, ClientSecret is stored in plain text
+# in the scheduled task arguments and is visible via Get-ScheduledTask / schtasks /query.
+# For production use, consider storing credentials in a secure vault (e.g. Azure Key Vault,
+# Windows Credential Manager) and retrieving them at runtime in the collector script.
 $ErrorActionPreference = "Stop"
 
 $resolvedScriptPath = (Resolve-Path $ScriptPath).Path

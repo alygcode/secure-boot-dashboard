@@ -2,7 +2,7 @@
 // Use as a scheduled query alert. Returns one row when risk threshold is breached.
 
 let staleCutoff = 7d;
-let notUpdatedPctThreshold = 0.10;   // 10%
+let nonCompliantPctThreshold = 0.10;   // 10%
 let blockedPctThreshold = 0.03;      // 3%
 let hardDeadline = datetime(2026-06-30);
 let classified = materialize(
@@ -10,7 +10,11 @@ let classified = materialize(
     | where TimeGenerated >= ago(30d)
     | extend
         DeviceId = tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s)),
+        DeviceName = tostring(coalesce(DeviceName_s, DeviceHostname_s, DeviceDisplayName_s)),
         LastSeen = todatetime(coalesce(LastSeen_t, LastSeen_s, LastCheckIn_t, LastSync_t)),
+        BIOSVersion = tostring(coalesce(BIOSVersion_s, FirmwareVersion_s)),
+        RequiredBIOSVersion = tostring(coalesce(RequiredBIOSVersion_s, BIOSBaseline_s)),
+        OSBuild = tostring(coalesce(OSBuild_s, Build_s)),
         BootMode = tostring(coalesce(BootMode_s, FirmwareType_s)),
         SecureBootEnabled = tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)),
         TPMVersion = tostring(coalesce(TPMVersion_s, TpmVersion_s)),
@@ -38,11 +42,13 @@ let classified = materialize(
             BootMode != "UEFI", "LegacyMode",
             SecureBootEnabled != true, "SecureBootDisabled",
             TPMVersion != "2.0", "TPMBelow2",
+            isnotempty(BIOSVersion) and isnotempty(RequiredBIOSVersion) and BIOSVersion < RequiredBIOSVersion, "FirmwareBelowBaseline",
+            isnotempty(OSBuild) and OSBuild < "22631", "OSMissingUpdate",
             "None"
         ),
         PostureState = case(
             IsExempt == true, "Exempt",
-            CertStatus == "Unknown" or BootMode == "Unknown" or TPMVersion == "Unknown", "Unknown",
+            isempty(DeviceName) or BootMode == "Unknown" or TPMVersion == "Unknown" or CertStatus == "Unknown" or isempty(OSBuild), "Unknown",
             CertStatus == "Updated", "Updated",
             CertStatus == "NotUpdated" and BlockReason != "None", "Blocked",
             CertStatus == "NotUpdated", "NotUpdated",
@@ -61,11 +67,11 @@ classified
     Stale = countif(IsStale)
 | extend
     ActionableFleet = Fleet - Exempt,
-    NotUpdatedPct = iff(ActionableFleet <= 0, 0.0, todouble(NotUpdated + Blocked) / todouble(ActionableFleet)),
+    NonCompliantPct = iff(ActionableFleet <= 0, 0.0, todouble(NotUpdated + Blocked) / todouble(ActionableFleet)),
     BlockedPct = iff(ActionableFleet <= 0, 0.0, todouble(Blocked) / todouble(ActionableFleet)),
     DaysToDeadline = datetime_diff("day", hardDeadline, now()),
     BreachReason = case(
-        NotUpdatedPct > notUpdatedPctThreshold, "NotUpdatedAboveThreshold",
+        NonCompliantPct > nonCompliantPctThreshold, "NonCompliantAboveThreshold",
         BlockedPct > blockedPctThreshold, "BlockedAboveThreshold",
         Stale > 0, "StaleTelemetry",
         "None"
@@ -81,7 +87,7 @@ classified
     Unknown,
     Exempt,
     Stale,
-    NotUpdatedPct,
+    NonCompliantPct,
     BlockedPct,
     DaysToDeadline,
     BreachReason

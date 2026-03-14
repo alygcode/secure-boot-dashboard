@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(where gh:*)",
+      "Bash(git config:*)",
+      "Bash(printf:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "ruflo"
+  ]
+}

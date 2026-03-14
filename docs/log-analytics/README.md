@@ -137,20 +137,34 @@ Run these in order:
 6. [kql/05_trend_posture_over_time.kql](kql/05_trend_posture_over_time.kql)
 7. [kql/06_alert_deadline_risk.kql](kql/06_alert_deadline_risk.kql) (optional alert source)
 
+**Operational queries (run as needed):**
+
+8. [kql/08_stale_device_list.kql](kql/08_stale_device_list.kql) — devices with no telemetry in >7 days
+9. [kql/09_exempt_audit.kql](kql/09_exempt_audit.kql) — governance audit of all exempted devices
+10. [kql/10_department_posture_summary.kql](kql/10_department_posture_summary.kql) — posture roll-up by department (backs workbook department filter)
+11. [kql/11_regression_detection.kql](kql/11_regression_detection.kql) — devices that newly became Blocked within the last 7 days
+12. [kql/12_remediation_progress.kql](kql/12_remediation_progress.kql) — devices that moved from non-compliant → Updated within the last 14 days
+
 ---
 
 ## Repository Contents
 
-- `kql/00_normalized_device_posture.kql`
-- `kql/01_classification_5state.kql`
-- `kql/02_root_cause_breakdown.kql`
-- `kql/03_non_updated_device_detail.kql`
-- `kql/04_cohorts_model_bios_tpm.kql`
-- `kql/05_trend_posture_over_time.kql`
-- `kql/06_alert_deadline_risk.kql`
-- `kql/07_preflight_readiness.kql`
+- `kql/00_normalized_device_posture.kql` — normalization layer; one latest row per device (30d lookback)
+- `kql/01_classification_5state.kql` — 5-state posture classifier (Updated / NotUpdated / Blocked / Unknown / Exempt)
+- `kql/02_root_cause_breakdown.kql` — aggregated root-cause breakdown for non-ready devices
+- `kql/03_non_updated_device_detail.kql` — per-device remediation queue with `RemediationHint`
+- `kql/04_cohorts_model_bios_tpm.kql` — cohort prioritization with `RiskScore` and P1–P4 bands
+- `kql/05_trend_posture_over_time.kql` — 90-day time-series, daily posture bins
+- `kql/06_alert_deadline_risk.kql` — scheduled alert source; hard deadline 2026-06-30
+- `kql/07_preflight_readiness.kql` — environment readiness check before importing the workbook
+- `kql/08_stale_device_list.kql` — devices not seen in >7 days; ordered worst-first (nulls first)
+- `kql/09_exempt_audit.kql` — governance audit of all `IsExempt=true` devices with `ExemptionReason`
+- `kql/10_department_posture_summary.kql` — posture counts + `UpdatedPct` / `NonCompliantPct` by department
+- `kql/11_regression_detection.kql` — devices that became Blocked in the last 7 days but had prior healthy state
+- `kql/12_remediation_progress.kql` — devices that moved NotUpdated/Blocked → Updated in the last 14 days
 - `deployment/dcr-transform.kql`
 - `deployment/sample-payload.json`
+- `deployment/live-payload.json`
 - `deployment/send-intune-secureboot.ps1`
 - `deployment/collect-live-intune-secureboot.ps1`
 - `deployment/register-secureboot-collector-task.ps1`

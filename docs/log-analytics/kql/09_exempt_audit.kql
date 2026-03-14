@@ -1,0 +1,55 @@
+// 09_exempt_audit.kql
+// Governance audit list of all exempt devices with exemption reasons and telemetry age.
+
+let lookback = 30d;
+IntuneSecureBootInventory_CL
+| where TimeGenerated >= ago(lookback)
+| extend _DeviceId = tostring(coalesce(DeviceId_g, DeviceId_s, AadDeviceId_g, ManagedDeviceId_s))
+| where isnotempty(_DeviceId)
+| summarize arg_max(TimeGenerated, *) by _DeviceId
+| extend
+    DeviceId = _DeviceId,
+    DeviceName = tostring(coalesce(DeviceName_s, DeviceHostname_s, DeviceDisplayName_s)),
+    PrimaryUser = tostring(coalesce(PrimaryUser_s, UserPrincipalName_s, AssignedUser_s)),
+    Department = tostring(coalesce(Department_s, OrgUnit_s)),
+    Model = tostring(coalesce(Model_s, HardwareModel_s)),
+    IsExempt = tobool(coalesce(IsExempt_b, Exempt_b, IsException_b)),
+    ExemptionReason = tostring(coalesce(ExemptionReason_s, ExceptionReason_s)),
+    LastSeen = todatetime(coalesce(LastSeen_t, LastSeen_s, LastCheckIn_t, LastSync_t)),
+    UEFICertificateVersion = tostring(coalesce(UEFICertificateVersion_s, SecureBootCertVersion_s, CertVersion_s)),
+    BootMode = tostring(coalesce(BootMode_s, FirmwareType_s)),
+    SecureBootEnabled = tobool(coalesce(SecureBootEnabled_b, SecureBootState_b, SecureBootEnabled_s)),
+    TPMVersion = tostring(coalesce(TPMVersion_s, TpmVersion_s)),
+    WarrantyEndDate = todatetime(coalesce(WarrantyEndDate_t, WarrantyExpiry_t, WarrantyEndDate_s))
+| where IsExempt == true
+| extend
+    UEFICertificateVersion = case(
+        UEFICertificateVersion contains "2023", "2023",
+        UEFICertificateVersion contains "2011", "2011",
+        isempty(UEFICertificateVersion), "Unknown",
+        UEFICertificateVersion
+    ),
+    CertStatus = case(
+        UEFICertificateVersion == "2023", "Updated",
+        UEFICertificateVersion == "2011", "NotUpdated",
+        "Unknown"
+    ),
+    BootMode = case(BootMode =~ "UEFI", "UEFI", BootMode =~ "Legacy", "Legacy", "Unknown"),
+    TPMVersion = case(TPMVersion has "2.0", "2.0", TPMVersion has "1.2", "1.2", TPMVersion =~ "None", "None", "Unknown"),
+    WarrantyState = case(isnull(WarrantyEndDate), "Unknown", WarrantyEndDate < now(), "Expired", "Active"),
+    DaysSinceLastSeen = iff(isnull(LastSeen), int(null), datetime_diff("day", now(), LastSeen))
+| project
+    DeviceName,
+    DeviceId,
+    PrimaryUser,
+    Department,
+    Model,
+    ExemptionReason,
+    CertStatus,
+    BootMode,
+    SecureBootEnabled,
+    TPMVersion,
+    WarrantyState,
+    LastSeen,
+    DaysSinceLastSeen
+| order by ExemptionReason asc, DeviceName asc

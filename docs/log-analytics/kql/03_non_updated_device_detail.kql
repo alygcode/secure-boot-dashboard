@@ -45,11 +45,12 @@ let classified = materialize(
             SecureBootEnabled != true, "SecureBootDisabled",
             TPMVersion != "2.0", "TPMBelow2",
             isnotempty(BIOSVersion) and isnotempty(RequiredBIOSVersion) and BIOSVersion < RequiredBIOSVersion, "FirmwareBelowBaseline",
+            isnotempty(OSBuild) and OSBuild < "22631", "OSMissingUpdate",
             "None"
         ),
         PostureState = case(
             IsExempt == true, "Exempt",
-            CertStatus == "Unknown" or BootMode == "Unknown" or TPMVersion == "Unknown", "Unknown",
+            isempty(DeviceName) or BootMode == "Unknown" or TPMVersion == "Unknown" or CertStatus == "Unknown" or isempty(OSBuild), "Unknown",
             CertStatus == "Updated", "Updated",
             CertStatus == "NotUpdated" and BlockReason != "None", "Blocked",
             CertStatus == "NotUpdated", "NotUpdated",
@@ -61,6 +62,7 @@ let classified = materialize(
             BlockReason == "SecureBootDisabled", "Enable Secure Boot in firmware",
             BlockReason == "TPMBelow2", "Upgrade/replace TPM to version 2.0",
             BlockReason == "FirmwareBelowBaseline", "Update BIOS/firmware to approved baseline",
+            BlockReason == "OSMissingUpdate", "Update OS to required build baseline",
             PostureState == "NotUpdated", "Stage 2023 UEFI cert deployment",
             PostureState == "Unknown", "Collect missing telemetry and re-evaluate",
             "No action required"
